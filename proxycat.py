@@ -309,36 +309,60 @@ def patrol():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="proxycat —— 代理清理喵~ (=^･ω･^=)")
+    parser = argparse.ArgumentParser(
+        prog="proxycat",
+        description="proxycat —— 代理管理小工具 (=^･ω･^=)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "示例：\n"
+            "  proxycat                        检测并修复代理残留\n"
+            "  proxycat flclash status         查看 FlClash 状态\n"
+            "  proxycat flclash restart        重启 FlClash\n"
+            "  proxycat flclash mode global    切换内核模式\n"
+            "  proxycat flclash node 菲律宾    切换节点\n"
+            "  proxycat proxy on               开启系统代理\n"
+            "  proxycat proxy off              关闭系统代理\n"
+            "  proxycat git                    检查 git 代理"
+        ),
+    )
     sub = parser.add_subparsers(dest="command")
 
     p = sub.add_parser(
         "flclash",
-        help="FlClash 管理：status / restart / mode / node",
+        help="FlClash 管理",
         description="FlClash 管理：查看状态、重启、切模式、切节点",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "示例：\n"
+            "  proxycat flclash status          查看状态\n"
+            "  proxycat flclash mode global     切全局模式\n"
+            "  proxycat flclash node 菲律宾     切节点（支持模糊匹配）"
+        ),
     )
     p.add_argument(
         "action",
         choices=["status", "restart", "mode", "node"],
-        help="要执行的操作",
+        help="status=查看状态  restart=重启  mode=切模式  node=切节点",
     )
     p.add_argument(
         "value",
         nargs="?",
-        help="mode 的取值(rule/global/direct) 或 node 的节点名",
+        help="mode 时取 rule/global/direct；node 时取节点名（可模糊匹配）",
     )
 
     pp = sub.add_parser(
         "proxy",
-        help="系统代理开关：on 开 / off 关",
+        help="系统代理开关",
         description="切换 GNOME 系统代理：on 指向 FlClash，off 恢复直连",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="示例：\n  proxycat proxy on   开启\n  proxycat proxy off  关闭",
     )
     pp.add_argument("action", choices=["on", "off"], help="on 开启 / off 关闭")
 
     sub.add_parser(
         "git",
-        help="检查 git 代理指向的端口死活，死了清掉直连",
-        description="检查 git 的 http/https 代理是否指向活端口，指向死端口就清掉直连",
+        help="检查 git 代理",
+        description="检查 git 的 http/https 代理是否指向活端口，指向死端口就清掉改直连",
     )
 
     args = parser.parse_args(argv)
