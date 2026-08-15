@@ -103,8 +103,8 @@ def clash_status():
     main_pids = clash_pids("FlClash")
     core_pids = clash_pids("FlClashCore")
     print("(=^･ω･^=) FlClash 状态喵~")
-    _print_running("  主程序  ", main_pids)
-    _print_running("  核心进程", core_pids)
+    _print_running("主程序　", main_pids)   # 「主程序」+全角空格补到 8 列，和下面三行对齐
+    _print_running("核心进程", core_pids)
     if clash_service_alive():
         print(f"  代理服务 : (^▽^) 有端口在监听（混合 {PROXY_PORT} / DNS {DNS_PORT}）")
     else:
