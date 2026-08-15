@@ -6,16 +6,23 @@
 #   导致 Firefox 等桌面应用报「代理服务器拒绝连接」，但 curl 一直正常。
 #
 # 用法：
-#   python3 proxycat.py                    # 检测 + 修复代理残留
-#   python3 proxycat.py flclash status     # 查看 FlClash 运行状态
-#   python3 proxycat.py flclash restart    # 重启 FlClash（打不开时用它）
+#   python3 proxycat.py                      # 检测 + 修复代理残留
+#   python3 proxycat.py flclash status       # 查看 FlClash 运行状态
+#   python3 proxycat.py flclash restart      # 重启 FlClash（打不开时用它）
+#   python3 proxycat.py flclash mode global  # 切内核模式 rule/global/direct
+#   python3 proxycat.py flclash node 菲律宾  # 切 GLOBAL 节点（支持模糊匹配）
+#   python3 proxycat.py proxy on/off         # 开关系统代理
+#   python3 proxycat.py git                  # 检查 git 代理指向的端口死活
 #
 # 依赖：gsettings（GNOME 系统代理设置，几乎必装）
 
 import argparse
+import json
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 
 # gsettings 配置路径
@@ -27,6 +34,8 @@ PROXY_PORT = 7890
 DNS_PORT = 1053
 # FlClash 的两个进程名（主程序 + 核心）
 CLASH_NAMES = ("FlClash", "FlClashCore")
+# mihomo RESTful API 地址（FlClash 设置里开启「外部控制器」后可用）
+API_BASE = "http://127.0.0.1:9090"
 
 
 def gsettings_get(key):
@@ -103,6 +112,26 @@ def clash_pids(name):
     return result.stdout.split()
 
 
+def clash_api(path, method="GET", body=None):
+    """调用 mihomo RESTful API，返回解析后的 JSON。
+
+    path 以 / 开头（如 "/configs"）；body 是 dict，序列化成 JSON 发送。
+    连不上（API 没开、core 挂了）时返回 None，调用方自行判断。
+    """
+    url = API_BASE + path
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, method=method)
+    if body is not None:
+        req.add_header("Content-Type", "application/json")
+    try:
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            raw = resp.read()
+            # 204 等空响应体返回 {}，表示「成功但无数据」
+            return json.loads(raw) if raw else {}
+    except (urllib.error.URLError, OSError, json.JSONDecodeError):
+        return None
+
+
 def _print_running(label, pids):
     """打印一行「程序 : 运行中(PID) / 未运行」"""
     if pids:
@@ -112,7 +141,7 @@ def _print_running(label, pids):
 
 
 def clash_status():
-    """FlClash 状态：主程序 / 核心进程 / 代理端口 / 系统代理模式"""
+    """FlClash 状态：主程序 / 核心进程 / 代理端口 / 系统代理模式 / 内核信息"""
     main_pids = clash_pids("FlClash")
     core_pids = clash_pids("FlClashCore")
     print("(=^･ω･^=) FlClash 状态喵~")
@@ -123,6 +152,23 @@ def clash_status():
     else:
         print(f"  代理服务 : (╥﹏╥) {PROXY_HOST}:{PROXY_PORT} 和 :{DNS_PORT} 都不通")
     print(f"  系统代理 : {proxy_mode()}")
+
+    # 内核信息走 API（core 活着但外部控制器没开时会返回 None，优雅跳过）
+    config = clash_api("/configs")
+    if config is None:
+        print("  内核信息 : (╥﹏╥) API 不可用（外部控制器没开？）")
+    else:
+        print(f"  内核模式 : {config.get('mode', '?')}")
+        proxies = clash_api("/proxies")
+        if proxies:
+            groups = {
+                k: v for k, v in proxies["proxies"].items()
+                if v.get("type") == "Selector"
+            }
+            if groups:
+                print("  节点组   :")
+                for name, g in groups.items():
+                    print(f"    {name:<6} -> {g.get('now', '?')}")
 
     if main_pids and clash_service_alive():
         print("  (・∀・) 进程在跑但觉得窗口打不开？那是单实例锁挡住新点击，用 restart~")
@@ -151,6 +197,63 @@ def clash_restart():
         print("  (^▽^) 代理端口已恢复，重启完成喵~")
     else:
         print("  (；´Д`)  FlClash 已启动，但代理还没起来，稍等几秒再试~")
+
+
+def clash_mode(target):
+    """切换内核模式：rule / global / direct（走 API）"""
+    result = clash_api("/configs", method="PATCH", body={"mode": target})
+    if result is None:
+        print("  (╥﹏╥) API 不可用，切换失败（外部控制器没开？）")
+        return
+    print(f"  (^▽^) 已切换到 {target} 模式喵~")
+
+
+def clash_node(name):
+    """切换 GLOBAL 组的节点（支持模糊匹配，走 API）"""
+    proxies = clash_api("/proxies")
+    if proxies is None:
+        print("  (╥﹏╥) API 不可用，切换失败（外部控制器没开？）")
+        return
+    group = proxies["proxies"].get("GLOBAL")
+    if not group or group.get("type") != "Selector":
+        print("  (╥﹏╥) 没找到 GLOBAL 组")
+        return
+    choices = group.get("all", [])
+    # 先精确匹配，再模糊匹配（节点名包含输入的子串）
+    match = name if name in choices else None
+    if match is None:
+        matches = [c for c in choices if name in c]
+        if len(matches) == 1:
+            match = matches[0]
+        elif len(matches) > 1:
+            print(f"  (；´Д`) 「{name}」匹配到多个节点，再精确点：")
+            for m in matches:
+                print(f"    - {m}")
+            return
+        else:
+            print(f"  (；´Д`) 没找到节点「{name}」，用 flclash status 看可选节点")
+            return
+    result = clash_api("/proxies/GLOBAL", method="PUT", body={"name": match})
+    if result is None:
+        print("  (╥﹏╥) 切换失败")
+        return
+    print(f"  (^▽^) GLOBAL 已切换到「{match}」喵~")
+
+
+def proxy_on():
+    """打开系统代理：mode=manual，指向 FlClash 混合端口"""
+    subprocess.run(["gsettings", "set", GSETTINGS, "mode", "manual"], check=False)
+    if proxy_still_alive():
+        print(f"  (^▽^) 系统代理已开启，指向 {PROXY_HOST}:{PROXY_PORT} 喵~")
+    else:
+        print(f"  (；´Д`) 系统代理已设，但 {PROXY_PORT} 端口没监听！")
+        print("          FlClash 的代理开关可能没开，先去 FlClash 里开代理")
+
+
+def proxy_off():
+    """关闭系统代理：mode=none，恢复直连"""
+    subprocess.run(["gsettings", "set", GSETTINGS, "mode", "none"], check=False)
+    print("  (^▽^) 系统代理已关闭，恢复直连喵~")
 
 
 def git_get(key):
@@ -208,28 +311,55 @@ def patrol():
 def main(argv=None):
     parser = argparse.ArgumentParser(description="proxycat —— 代理清理喵~ (=^･ω･^=)")
     sub = parser.add_subparsers(dest="command")
+
     p = sub.add_parser(
         "flclash",
-        help="FlClash 管理：status 查看 / restart 重启",
-        description="FlClash 管理：status 查看运行状态，restart 杀掉重启（打不开时用它）",
+        help="FlClash 管理：status / restart / mode / node",
+        description="FlClash 管理：查看状态、重启、切模式、切节点",
     )
     p.add_argument(
         "action",
-        choices=["status", "restart"],
-        help="要执行的操作：status 查看状态 / restart 重启",
+        choices=["status", "restart", "mode", "node"],
+        help="要执行的操作",
     )
+    p.add_argument(
+        "value",
+        nargs="?",
+        help="mode 的取值(rule/global/direct) 或 node 的节点名",
+    )
+
+    pp = sub.add_parser(
+        "proxy",
+        help="系统代理开关：on 开 / off 关",
+        description="切换 GNOME 系统代理：on 指向 FlClash，off 恢复直连",
+    )
+    pp.add_argument("action", choices=["on", "off"], help="on 开启 / off 关闭")
+
     sub.add_parser(
         "git",
         help="检查 git 代理指向的端口死活，死了清掉直连",
         description="检查 git 的 http/https 代理是否指向活端口，指向死端口就清掉直连",
     )
+
     args = parser.parse_args(argv)
 
     if args.command == "flclash":
         if args.action == "status":
             clash_status()
-        else:
+        elif args.action == "restart":
             clash_restart()
+        elif args.action == "mode":
+            if args.value in ("rule", "global", "direct"):
+                clash_mode(args.value)
+            else:
+                parser.error("mode 的取值必须是 rule / global / direct")
+        elif args.action == "node":
+            if args.value:
+                clash_node(args.value)
+            else:
+                parser.error("node 需要节点名，例如：flclash node 菲律宾")
+    elif args.command == "proxy":
+        proxy_on() if args.action == "on" else proxy_off()
     elif args.command == "git":
         git_check()
     else:
