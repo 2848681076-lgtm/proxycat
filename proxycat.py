@@ -249,33 +249,61 @@ def clash_node(name):
     print(f"  (^▽^) GLOBAL 已切换到「{match}」喵~")
 
 
-def clash_list():
-    """列出所有可选项：内核模式 + GLOBAL 组节点（切换前先看一眼）"""
-    config = clash_api("/configs")
-    proxies = clash_api("/proxies")
-    if config is None or proxies is None:
-        print("  (╥﹏╥) API 不可用，拿不到列表（外部控制器没开？）")
-        return
-
-    current_mode = config.get("mode", "?")
-    print("(=^･ω･^=) 可选列表喵~")
+def _list_modes(current_mode):
+    """打印模式选项（内部辅助，list / mode 不带参数共用）"""
     print(f"  内核模式（当前 {current_mode}）：")
     for m in MODE_CHOICES:
         mark = "← 当前" if m == current_mode else ""
         print(f"    {m:<8} {mark}  {MODE_DESC[m]}")
 
-    group = proxies["proxies"].get("GLOBAL")
-    if not group:
-        print("  (╥﹏╥) 没找到 GLOBAL 组")
-        return
+
+def _list_nodes(group):
+    """打印 GLOBAL 组节点（内部辅助，过滤信息条目）"""
     now = group.get("now", "?")
-    # 过滤掉「剩余流量」这类信息条目，只留真节点
     all_nodes = group.get("all", [])
     nodes = [n for n in all_nodes if not any(k in n for k in INFO_KEYWORDS)]
     print(f"  GLOBAL 节点（当前「{now}」，共 {len(nodes)} 个）：")
     for i, name in enumerate(nodes, 1):
         mark = " ← 当前" if name == now else ""
         print(f"    {i:>2}. {name}{mark}")
+
+
+def clash_list():
+    """列出所有可选项：内核模式 + GLOBAL 组节点"""
+    config = clash_api("/configs")
+    proxies = clash_api("/proxies")
+    if config is None or proxies is None:
+        print("  (╥﹏╥) API 不可用，拿不到列表（外部控制器没开？）")
+        return
+    print("(=^･ω･^=) 可选列表喵~")
+    _list_modes(config.get("mode", "?"))
+    group = proxies["proxies"].get("GLOBAL")
+    if group:
+        _list_nodes(group)
+
+
+def clash_list_modes():
+    """只列出内核模式选项（flclash mode 不带参数时调用）"""
+    config = clash_api("/configs")
+    if config is None:
+        print("  (╥﹏╥) API 不可用，拿不到模式列表（外部控制器没开？）")
+        return
+    print("(=^･ω･^=) 内核模式喵~")
+    _list_modes(config.get("mode", "?"))
+
+
+def clash_list_nodes():
+    """只列出 GLOBAL 组节点（flclash node 不带参数时调用）"""
+    proxies = clash_api("/proxies")
+    if proxies is None:
+        print("  (╥﹏╥) API 不可用，拿不到节点列表（外部控制器没开？）")
+        return
+    group = proxies["proxies"].get("GLOBAL")
+    if not group:
+        print("  (╥﹏╥) 没找到 GLOBAL 组")
+        return
+    print("(=^･ω･^=) GLOBAL 节点喵~")
+    _list_nodes(group)
 
 
 def proxy_on():
@@ -387,7 +415,7 @@ def main(argv=None):
     p.add_argument(
         "value",
         nargs="?",
-        help="mode 时取 rule/global/direct；node 时取节点名（可模糊匹配）",
+        help="mode 取 rule/global/direct；node 取节点名。不带参数则列出选项",
     )
 
     pp = sub.add_parser(
@@ -415,15 +443,17 @@ def main(argv=None):
         elif args.action == "restart":
             clash_restart()
         elif args.action == "mode":
-            if args.value in MODE_CHOICES:
+            if args.value is None:
+                clash_list_modes()  # 不带参数 → 列出可选模式
+            elif args.value in MODE_CHOICES:
                 clash_mode(args.value)
             else:
                 parser.error("mode 的取值必须是 rule / global / direct")
         elif args.action == "node":
-            if args.value:
-                clash_node(args.value)
+            if args.value is None:
+                clash_list_nodes()  # 不带参数 → 列出可选节点
             else:
-                parser.error("node 需要节点名，例如：flclash node 菲律宾")
+                clash_node(args.value)
     elif args.command == "proxy":
         proxy_on() if args.action == "on" else proxy_off()
     elif args.command == "git":

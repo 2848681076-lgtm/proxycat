@@ -32,8 +32,8 @@ FlClash 关闭后会在 gsettings 里残留「系统代理」设置，导致 Fir
 - `status` — 查看主程序/核心进程、端口监听、系统代理、内核模式、节点组概览
 - `list` — 列出可选的模式（带中文说明）和 GLOBAL 节点（过滤信息条目）
 - `restart` — 杀掉残留进程重新启动（解决「打不开」）
-- `mode` — 切换内核模式 rule / global / direct
-- `node` — 切换 GLOBAL 组节点，支持模糊匹配（如 `node 菲律宾`）
+- `mode` — 切换内核模式 rule / global / direct；不带参数则列出选项
+- `node` — 切换 GLOBAL 组节点，支持模糊匹配（如 `node 菲律宾`）；不带参数则列出节点
 
 ### 系统代理开关（`proxy`）
 
