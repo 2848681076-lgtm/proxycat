@@ -36,6 +36,15 @@ DNS_PORT = 1053
 CLASH_NAMES = ("FlClash", "FlClashCore")
 # mihomo RESTful API 地址（FlClash 设置里开启「外部控制器」后可用）
 API_BASE = "http://127.0.0.1:9090"
+# 内核模式的三种取值 + 中文说明（list 和 mode 切换共用）
+MODE_CHOICES = ("rule", "global", "direct")
+MODE_DESC = {
+    "rule": "按规则分流（国内直连、国外代理）",
+    "global": "全局代理（所有流量走代理）",
+    "direct": "全局直连（不走代理）",
+}
+# 订阅机场塞进节点列表的「信息条目」关键词（不是真节点，list 时跳过）
+INFO_KEYWORDS = ("剩余流量", "重置", "套餐", "倍率", "请使用")
 
 
 def gsettings_get(key):
@@ -240,6 +249,35 @@ def clash_node(name):
     print(f"  (^▽^) GLOBAL 已切换到「{match}」喵~")
 
 
+def clash_list():
+    """列出所有可选项：内核模式 + GLOBAL 组节点（切换前先看一眼）"""
+    config = clash_api("/configs")
+    proxies = clash_api("/proxies")
+    if config is None or proxies is None:
+        print("  (╥﹏╥) API 不可用，拿不到列表（外部控制器没开？）")
+        return
+
+    current_mode = config.get("mode", "?")
+    print("(=^･ω･^=) 可选列表喵~")
+    print(f"  内核模式（当前 {current_mode}）：")
+    for m in MODE_CHOICES:
+        mark = "← 当前" if m == current_mode else ""
+        print(f"    {m:<8} {mark}  {MODE_DESC[m]}")
+
+    group = proxies["proxies"].get("GLOBAL")
+    if not group:
+        print("  (╥﹏╥) 没找到 GLOBAL 组")
+        return
+    now = group.get("now", "?")
+    # 过滤掉「剩余流量」这类信息条目，只留真节点
+    all_nodes = group.get("all", [])
+    nodes = [n for n in all_nodes if not any(k in n for k in INFO_KEYWORDS)]
+    print(f"  GLOBAL 节点（当前「{now}」，共 {len(nodes)} 个）：")
+    for i, name in enumerate(nodes, 1):
+        mark = " ← 当前" if name == now else ""
+        print(f"    {i:>2}. {name}{mark}")
+
+
 def proxy_on():
     """打开系统代理：mode=manual，指向 FlClash 混合端口"""
     subprocess.run(["gsettings", "set", GSETTINGS, "mode", "manual"], check=False)
@@ -317,6 +355,7 @@ def main(argv=None):
             "示例：\n"
             "  proxycat                        检测并修复代理残留\n"
             "  proxycat flclash status         查看 FlClash 状态\n"
+            "  proxycat flclash list           列出可选的模式和节点\n"
             "  proxycat flclash restart        重启 FlClash\n"
             "  proxycat flclash mode global    切换内核模式\n"
             "  proxycat flclash node 菲律宾    切换节点\n"
@@ -334,6 +373,7 @@ def main(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例：\n"
+            "  proxycat flclash list            列出可选模式和节点\n"
             "  proxycat flclash status          查看状态\n"
             "  proxycat flclash mode global     切全局模式\n"
             "  proxycat flclash node 菲律宾     切节点（支持模糊匹配）"
@@ -341,8 +381,8 @@ def main(argv=None):
     )
     p.add_argument(
         "action",
-        choices=["status", "restart", "mode", "node"],
-        help="status=查看状态  restart=重启  mode=切模式  node=切节点",
+        choices=["status", "list", "restart", "mode", "node"],
+        help="status=状态  list=列选项  restart=重启  mode=切模式  node=切节点",
     )
     p.add_argument(
         "value",
@@ -370,10 +410,12 @@ def main(argv=None):
     if args.command == "flclash":
         if args.action == "status":
             clash_status()
+        elif args.action == "list":
+            clash_list()
         elif args.action == "restart":
             clash_restart()
         elif args.action == "mode":
-            if args.value in ("rule", "global", "direct"):
+            if args.value in MODE_CHOICES:
                 clash_mode(args.value)
             else:
                 parser.error("mode 的取值必须是 rule / global / direct")

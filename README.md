@@ -13,6 +13,7 @@
 ```bash
 python3 proxycat.py                        # 检测 + 修复代理残留
 python3 proxycat.py flclash status         # 查看 FlClash 运行状态
+python3 proxycat.py flclash list           # 列出可选模式和节点
 python3 proxycat.py flclash restart        # 重启 FlClash（打不开时用它）
 python3 proxycat.py flclash mode global    # 切内核模式 rule/global/direct
 python3 proxycat.py flclash node 菲律宾    # 切 GLOBAL 节点（支持模糊匹配）
@@ -29,6 +30,7 @@ FlClash 关闭后会在 gsettings 里残留「系统代理」设置，导致 Fir
 ### FlClash 管理（`flclash`）
 
 - `status` — 查看主程序/核心进程、端口监听、系统代理、内核模式、节点组概览
+- `list` — 列出可选的模式（带中文说明）和 GLOBAL 节点（过滤信息条目）
 - `restart` — 杀掉残留进程重新启动（解决「打不开」）
 - `mode` — 切换内核模式 rule / global / direct
 - `node` — 切换 GLOBAL 组节点，支持模糊匹配（如 `node 菲律宾`）
