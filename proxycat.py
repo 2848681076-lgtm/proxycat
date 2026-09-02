@@ -11,6 +11,7 @@
 #   python3 proxycat.py flclash restart    # 重启 FlClash（打不开时用它）
 #   python3 proxycat.py verge status       # 查看 Clash Verge 运行状态
 #   python3 proxycat.py verge restart      # 重启 Clash Verge
+#   python3 proxycat.py git                # 自动对齐 git 代理（有代理指过去，没有则去掉）
 #
 # 依赖：gsettings（GNOME 系统代理设置，几乎必装）
 
@@ -61,6 +62,18 @@ def _port_open(host, port):
         return True
     except OSError:
         return False
+
+
+def find_active_client():
+    """返回当前代理服务还活着的第一个客户端配置；一个都没有返回 None。
+
+    靠混合端口探测（verge 在跑返回 verge 的配置，FlClash 在跑返回 flclash），
+    两个都没开返回 None。
+    """
+    for name, c in CLIENTS.items():
+        if _port_open(PROXY_HOST, c["port"]):
+            return c
+    return None
 
 
 def proxy_still_alive():
@@ -164,6 +177,29 @@ def client_restart(client):
         print(f"  (；´Д`)  {client} 已启动，但代理还没起来，稍等几秒再试~")
 
 
+def git_proxy():
+    """对齐 git 代理：检测当前在跑的代理客户端，把 git 的 http/https 代理指过去。
+
+    有代理在跑 → 设为 socks5h://127.0.0.1:<它的混合端口>
+    没代理在跑 → 去掉 git 代理设置（防止残留旧端口，连不上 GitHub）
+    """
+    print("(=^･ω･^=) 喵~ 帮你对齐 git 代理~")
+    active = find_active_client()
+    if active:
+        proxy = f"socks5h://{PROXY_HOST}:{active['port']}"
+        for key in ("http.proxy", "https.proxy"):
+            subprocess.run(["git", "config", "--global", key, proxy], check=False)
+        print(f"  (^▽^) 检测到 {active['main']}（混合 {active['port']}），git 代理 → {proxy}")
+    else:
+        for key in ("http.proxy", "https.proxy"):
+            subprocess.run(
+                ["git", "config", "--global", "--unset-all", key],
+                stderr=subprocess.DEVNULL,  # 没设置过时 unset 报错，忽略即可
+                check=False,
+            )
+        print("  (^▽^) 没有代理在跑，已去掉 git 代理设置")
+
+
 def patrol():
     """检测代理残留并修复"""
     print("(=^･ω･^=) 喵~ proxycat 来巡逻网络啦")
@@ -189,9 +225,15 @@ def main(argv=None):
             choices=["status", "restart"],
             help="要执行的操作：status 查看状态 / restart 重启",
         )
+    sub.add_parser(
+        "git",
+        help="自动对齐 git 代理：有代理在跑就指过去，没有就去掉",
+    )
     args = parser.parse_args(argv)
 
-    if args.command in CLIENTS:
+    if args.command == "git":
+        git_proxy()
+    elif args.command in CLIENTS:
         if args.action == "status":
             client_status(args.command)
         else:

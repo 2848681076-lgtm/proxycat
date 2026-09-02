@@ -10,6 +10,7 @@ python3 proxycat.py flclash status     # 查看 FlClash 运行状态
 python3 proxycat.py flclash restart    # 重启 FlClash（打不开时用它）
 python3 proxycat.py verge status       # 查看 Clash Verge 运行状态
 python3 proxycat.py verge restart      # 重启 Clash Verge
+python3 proxycat.py git                # 自动对齐 git 代理（有代理指过去，没有则去掉）
 ```
 
 ## 解决什么问题
