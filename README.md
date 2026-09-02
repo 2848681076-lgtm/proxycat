@@ -16,6 +16,20 @@ python3 proxycat.py verge restart       # 重启 Clash Verge
 python3 proxycat.py git                 # 自动对齐 git 代理
 ```
 
+## 安装（可选）
+
+不装也能用：clone 下来 `python3 proxycat.py` 直接跑。
+
+想敲 `proxycat` 命令（省掉 `python3` 前缀），把它链接到你的用户 PATH：
+
+```bash
+ln -s "$(pwd)/proxycat.py" ~/.local/bin/proxycat   # 在 clone 目录里执行
+```
+
+`$(pwd)` 会展开成当前目录，换位置后重跑一次即可。clone 下来的文件自带执行位；如果是从 zip 下载的、没有执行权限，先 `chmod +x proxycat.py`。
+
+> 为什么这一步不能写进 git？`proxycat` 其实是本机 `~/.local/bin` 里的**软链接**，指向你的绝对路径——git 只分享代码和可执行位，不分享命令入口。所以「装入口」每台机器做一次。
+
 ## 解决什么问题
 
 FlClash / Clash Verge 关闭后会在 gsettings 里残留「系统代理」设置，
