@@ -1,56 +1,61 @@
 # proxycat (=^･ω･^=)
 
-代理管理小工具。清理 FlClash 残留的系统代理设置，并通过 API 控制 clash 内核。
+代理管理小工具：守护你的系统代理和 git 代理，免遭「残留」困扰。
+
+一键检测并修复代理残留，查看/重启 FlClash、Clash Verge 两个代理客户端，
+还能自动把 git 代理对齐到当前正在运行的客户端。
+
+## 快速上手
+
+```bash
+python3 proxycat.py                     # 检测 + 修复代理残留
+python3 proxycat.py flclash status      # 查看 FlClash 运行状态
+python3 proxycat.py flclash restart     # 重启 FlClash（打不开时用它）
+python3 proxycat.py verge status        # 查看 Clash Verge 运行状态
+python3 proxycat.py verge restart       # 重启 Clash Verge
+python3 proxycat.py git                 # 自动对齐 git 代理
+```
+
+## 解决什么问题
+
+FlClash / Clash Verge 关闭后会在 gsettings 里残留「系统代理」设置，
+导致 Firefox 等桌面应用报「代理服务器拒绝连接」，但 curl 一直正常。
+这是最坑的一种残留：藏得深，症状却很明显。
+
+直接运行 `proxycat.py` 自动检测：只要「设置了系统代理」，但用的代理端口
+都没在监听，就判定为残留并恢复直连。
+
+## git 代理也归我管
+
+切换代理客户端后，git 的 `http.proxy` / `https.proxy` 容易残留旧客户端的端口，
+导致 `git push` 连不上（连不上比没代理更隐蔽）。
+
+`python3 proxycat.py git` 会自动探测当前在跑的客户端，然后：
+
+- **有代理在跑** → 把 git 全局代理设成它的 `socks5h://127.0.0.1:<混合端口>`
+- **没代理在跑** → 去掉 git 代理设置
+
+## 代理客户端「打不开」怎么办？
+
+这类代理客户端大多是**单实例**应用：后台已有进程在跑时（关窗口 ≠ 退出），
+再点图标会被单实例锁忽略，表现为「点了没反应」。
+
+`status` 显示主程序/核心**进程在跑**但觉得窗口打不开？用对应的 `restart`
+杀掉残留进程重新启动。`restart` 会自动轮询等代理端口恢复连接，不用干等。
+
+## 支持的客户端与端口
+
+| 客户端 | 主程序进程 | 核心进程 | 混合端口 |
+|---|---|---|---|
+| FlClash | `FlClash` | `FlClashCore` | 7890 |
+| Clash Verge Rev | `clash-verge` | `verge-mihomo` | 7897 |
+
+客户端都收敛在 `proxycat.py` 顶部的 `CLIENTS` 配置表里，新增客户端只需加一行。
+两个客户端共用 DNS 端口 1053，所以判断存活只用各自独有的混合端口。
+如果在客户端设置里改过端口，记得同步这张表。
 
 ## 依赖
 
 - `gsettings`（GNOME 系统代理设置，几乎必装）
 - `pgrep` / `pkill`（procps，几乎必装）
-- FlClash 的「外部控制器」（`127.0.0.1:9090`，切 mode / node 时才需要）
-
-## 用法
-
-```bash
-python3 proxycat.py                        # 检测 + 修复代理残留
-python3 proxycat.py flclash status         # 查看 FlClash 运行状态
-python3 proxycat.py flclash list           # 列出可选模式和节点
-python3 proxycat.py flclash restart        # 重启 FlClash（打不开时用它）
-python3 proxycat.py flclash mode global    # 切内核模式 rule/global/direct
-python3 proxycat.py flclash node 菲律宾    # 切 GLOBAL 节点（支持模糊匹配）
-python3 proxycat.py proxy on/off           # 开关系统代理
-python3 proxycat.py git                    # 检查 git 代理指向的端口死活
-```
-
-## 功能说明
-
-### 清理代理残留（默认，无参数）
-
-FlClash 关闭后会在 gsettings 里残留「系统代理」设置，导致 Firefox 等桌面应用报「代理服务器拒绝连接」，但 curl 一直正常。直接运行 `proxycat.py` 自动检测并恢复直连。
-
-### FlClash 管理（`flclash`）
-
-- `status` — 查看主程序/核心进程、端口监听、系统代理、内核模式、节点组概览
-- `list` — 列出可选的模式（带中文说明）和 GLOBAL 节点（过滤信息条目）
-- `restart` — 杀掉残留进程重新启动（解决「打不开」）
-- `mode` — 切换内核模式 rule / global / direct；不带参数则列出选项
-- `node` — 切换 GLOBAL 组节点，支持模糊匹配（如 `node 菲律宾`）；不带参数则列出节点
-
-### 系统代理开关（`proxy`）
-
-`proxy on` 设 `mode=manual` 指向 FlClash，`proxy off` 恢复直连。
-
-### git 代理检查（`git`）
-
-检查 git 的 `http.proxy` / `https.proxy` 是否指向活端口，指向死端口就清掉改直连。
-
-## FlClash 打不开怎么办？
-
-FlClash 是**单实例**应用：后台已有进程在跑时（关窗口 ≠ 退出），再点图标会被单实例锁忽略，表现为「点了没反应」。用 `flclash restart` 杀掉残留进程重新启动即可。
-
-## 技术说明
-
-- FlClash 进程名用 `pgrep/pkill -x` 精确匹配（`-f` 会误匹配命令行里含 "FlClash" 的进程，包括 proxycat 自己）
-- 探测「代理是否活着」看 7890 混合端口或 1053 DNS 端口，**任一连通**即视为正常（FlClash 可能只开 DNS，7890 不一定监听）
-- 切 mode 用 `PATCH /configs`（`PUT` 会把配置写回 config.yaml，而 FlClash 的 core 没有这个文件，会报 400）
-- 切节点用 `PUT /proxies/GLOBAL`，成功返回 204 空 body
-- 全程零第三方依赖（只用标准库 `urllib.request`）
+- `git`（仅 `git` 子命令用到）
